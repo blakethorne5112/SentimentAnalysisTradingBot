@@ -293,9 +293,9 @@ def main():
         ]
         results = google_custom_search(f"{stock_name} news", GOOGLE_API_KEY, SEARCH_ENGINE_ID, domains)
         print_top_headlines(stock_name, results, max_results=10)
-        tweets = search_tweets(stock_name, count=5)
-        formatted_tweets = format_tweets(tweets, count=5)
-        display_tweets(formatted_tweets, stock_name)
+        # tweets = search_tweets(stock_name, count=5)
+        # formatted_tweets = format_tweets(tweets, count=5)
+        # display_tweets(formatted_tweets, stock_name)
         sentiment = round(final_sentiment(), 2)
         log_sentiment_to_json(ticker, sentiment)
     except Exception as e:

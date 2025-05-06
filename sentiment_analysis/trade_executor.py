@@ -12,7 +12,8 @@ from tabulate import tabulate
 from difflib import get_close_matches
 import reddit_scraper as RedditScraper
 
-def load_current_balance(filename='trading_history.json'):
+def load_current_balance(filename='trading_log.json'):
+    # Loads the current balance from the trading history file
     if os.path.exists(filename):
         try:
             with open(filename, 'r') as f:
@@ -99,7 +100,7 @@ def verify_stock_exists(ticker_or_name):
         return False, None, "Stock not found"
 
 def get_stock_from_user_input(input_text, allow_selection=True):
-    #Processes user input for stock name/ticker and returns a valid ticker
+    # Processes user input for stock name/ticker and returns a valid ticker
     exists, ticker, name_or_message = verify_stock_exists(input_text)
     
     if exists:
@@ -143,8 +144,8 @@ class PracticeTrader:
         self.transaction_history = []
         self.load_history()
     
-    def load_history(self, filename='trading_history.json'):
-        """Load transaction history from file if it exists"""
+    def load_history(self, filename='trading_log.json'):
+        # Loads transaction history from file if it exists
         if os.path.exists(filename):
             try:
                 with open(filename, 'r') as f:
@@ -156,8 +157,8 @@ class PracticeTrader:
             except Exception as e:
                 print(f"Error loading history: {e}")
     
-    def save_history(self, filename='trading_history.json'):
-        """Save transaction history to file"""
+    def save_history(self, filename='trading_log.json'):
+        # Saves transaction history to file
         data = {
             'transactions': self.transaction_history,
             'current_balance': self.current_balance,
@@ -191,7 +192,7 @@ class PracticeTrader:
             return None, None
     
     def record_transaction(self, ticker, action, price, shares, date, time_of_day, investment_amount=None):
-        """Record a transaction in the history"""
+        # Records a transaction to the history
         transaction_amount = price * shares
         
         if action == "BUY":
@@ -489,7 +490,6 @@ def menu(trader):
         
         else:
             print("Invalid choice. Please try again.")
-
 
 if __name__ == '__main__':
     main()
