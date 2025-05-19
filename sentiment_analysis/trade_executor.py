@@ -22,6 +22,8 @@ def load_current_balance(filename='trading_log.json'):
             return current_balance
         except Exception as e:
             return 20000  # Default balance if loading fails
+    else:
+        return 20000 # Default balance if file does not exist
 
 def is_market_open_today():
     date = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
@@ -358,6 +360,7 @@ class PracticeTrader:
         if trades:
             profits = [t['profit'] for t in trades]
             total_profit = sum(profits)
+            profit_loss = self.current_balance - self.initial_balance
             avg_profit = total_profit / len(trades)
             win_count = sum(1 for p in profits if p > 0)
             loss_count = sum(1 for p in profits if p < 0)
@@ -369,6 +372,7 @@ class PracticeTrader:
             
             print(f"Initial Balance: ${self.initial_balance:.2f}")
             print(f"Current Balance: ${self.current_balance:.2f}")
+            print(f"Profit/Loss: {'-$' if profit_loss < 0 else '$'}{abs(profit_loss):.2f}")
             print(f"Total Completed Trades: {len(trades)}")
             print(f"Win Rate: {win_rate:.2f}% ({win_count} wins, {loss_count} losses)")
             print(f"Average Profit per Trade: ${avg_profit:.2f}")
