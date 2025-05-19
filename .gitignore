@@ -23,4 +23,7 @@ sentiment_analysis/results/checkpoint-67500/model.safetensors
 sentiment_analysis/results/checkpoint-67500/optimizer.pt
 sentiment_analysis/sentiment_model/model.safetensors
 requirements.txt
-requirements.txt
+automatic_sentiment.log
+sentiment_log.json
+trading_log.json
+automatic_sentiment.log.1
