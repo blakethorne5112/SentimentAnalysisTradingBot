@@ -8,6 +8,7 @@ import os
 import json
 import re
 import requests
+import time
 from tabulate import tabulate
 from difflib import get_close_matches
 import reddit_scraper as RedditScraper
@@ -24,6 +25,30 @@ def load_current_balance(filename='trading_log.json'):
             return 20000  # Default balance if loading fails
     else:
         return 20000 # Default balance if file does not exist
+    
+def reset_balance(filename='trading_log.json'):
+    while True:
+        print("You don't have enough balance to invest. Would you like to reset your balance? (y/n): ")
+        if input().lower() == 'y':
+            initial_balance = 20000
+            data = {
+                'transactions': [],
+                'current_balance': initial_balance,
+            }
+            try:
+                with open(filename, 'w') as f:
+                    json.dump(data, f, indent=2)
+                print(f"Balance reset to ${initial_balance}")
+                return True
+            except Exception as e:
+                print(f"Error resetting balance: {e}")
+                print(f"You don't have enough balance to invest. Exiting.")
+                return None
+        elif input().lower() == 'n':
+            print("You don't have enough balance to invest. Exiting.")
+            return None          
+        else:
+            print("Invalid input. Please enter 'y' or 'n'.")
 
 def is_market_open_today():
     date = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
@@ -62,16 +87,17 @@ def search_stock_by_name(name):
         return []
         
 def verify_stock_exists(ticker_or_name):
-    # Verifies if a stock ticker or name exists
-    if ticker_or_name.isupper() and len(ticker_or_name) <= 5:
-        try:
-            ticker = yf.Ticker(ticker_or_name)
-            info = ticker.info
-            if 'regularMarketPrice' in info and info['regularMarketPrice'] is not None:
-                return True, ticker_or_name, info.get('shortName', 'Unknown')
-        except Exception:
-            pass
+    try:
+        ticker = yf.Ticker(ticker_or_name)
+        info = ticker.info
+        price_fields = ['regularMarketPrice', 'previousClose', 'price', 'currentPrice']
+        has_price = any(field in info and info[field] is not None for field in price_fields)
+        if has_price:
+            return True, ticker_or_name, info.get('shortName', info.get('longName', 'Unknown'))
+    except Exception as e:
+        print(f"Error: {e}")
     
+    # If that fails, then search by name
     results = search_stock_by_name(ticker_or_name)
     
     if results:
@@ -144,6 +170,7 @@ class PracticeTrader:
         self.initial_balance = initial_balance
         self.current_balance = initial_balance
         self.transaction_history = []
+        self.stock_data_cache = {}  # Add cache for stock data
         self.load_history()
     
     def load_history(self, filename='trading_log.json'):
@@ -172,25 +199,59 @@ class PracticeTrader:
         except Exception as e:
             print(f"Error saving history: {e}")
     
-    def get_stock_data(self, ticker, date):
-        # Gets open and close price data for the date
-        start_date = pd.Timestamp(date)
-        end_date = start_date + timedelta(days=1)
+    def fetch_stock_data(self, ticker, start_date, end_date=None):
+        cache_key = f"{ticker}_{start_date}_{end_date}"
+        
+        # If data is already in cache, return it
+        if cache_key in self.stock_data_cache:
+            print(f"Using cached data for {ticker}")
+            return self.stock_data_cache[cache_key]
         
         try:
-            data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            # If end_date is not provided, fetch just for the single date
+            if end_date is None:
+                start = pd.Timestamp(start_date)
+                end = start + timedelta(days=1)
+            else:
+                # Add buffer days to ensure we have data for the entire range
+                start = pd.Timestamp(start_date) - timedelta(days=5)
+                end = pd.Timestamp(end_date) + timedelta(days=5)
+            
+            data = yf.download(ticker, start=start, end=end, progress=False)
             
             if data.empty:
-                print(f"No data available for {ticker} on {date}")
-                return None, None
+                print(f"No data available for {ticker} from {start_date} to {end_date}")
+                return None
             
-            # Convert Series values to float before returning
-            open_price = float(data['Open'].iloc[0])
-            close_price = float(data['Close'].iloc[0])
+            # Store in cache
+            self.stock_data_cache[cache_key] = data
+            return data
             
-            return open_price, close_price
         except Exception as e:
             print(f"Error fetching data for {ticker}: {e}")
+            return None
+    
+    def get_stock_data(self, ticker, date):
+        try:
+            # Try to get data from cache first
+            data = self.fetch_stock_data(ticker, date)
+            
+            if data is None or data.empty:
+                return None, None
+            
+            # Find the date in the data
+            date_pd = pd.Timestamp(date)
+            if date_pd in data.index:
+                # Convert Series values to float before returning
+                open_price = float(data['Open'].iloc[0])
+                close_price = float(data['Close'].iloc[0])
+                return open_price, close_price
+            else:
+                print(f"Date {date} not found in data for {ticker}")
+                return None, None
+                
+        except Exception as e:
+            print(f"Error getting stock data for {ticker} on {date}: {e}")
             return None, None
     
     def record_transaction(self, ticker, action, price, shares, date, time_of_day, investment_amount=None):
@@ -281,6 +342,16 @@ class PracticeTrader:
         self.save_history()
         
         return profit
+    
+    def prefetch_data_for_period(self, ticker, start_date, end_date):
+        print(f"Prefetching data for {ticker} from {start_date} to {end_date}...")
+        data = self.fetch_stock_data(ticker, start_date, end_date)
+        if data is not None and not data.empty:
+            print(f"Successfully prefetched {len(data)} days of data for {ticker}")
+            return True
+        else:
+            print(f"Failed to prefetch data for {ticker}")
+            return False
     
     def show_trade_history(self, limit=10):
         """Display recent trade history"""
@@ -384,6 +455,77 @@ class PracticeTrader:
         else:
             print("No completed trades to analyze")
 
+def get_practice_date(marketOpen):
+    while True:
+        if marketOpen:
+            closed_input = input("Market was open today and open and close price data exists. Would you like to practice trade on the current date? (y/n): ")
+            if closed_input.lower() == 'y':
+                date = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+                return date
+            elif closed_input.lower() == 'n':
+                while True:
+                    past_input = input("Would you like to practice trade on a past date? (y/n): ")
+                    if past_input.lower() == 'y':
+                        while True:
+                            date_input = input("Enter date (YYYY-MM-DD): ")
+                            try:
+                                date = datetime.strptime(date_input, '%Y-%m-%d').strftime('%Y-%m-%d')
+                                return date
+                            except ValueError:
+                                print("Invalid date format. try again.")
+                    elif past_input.lower() == 'n':
+                        return None
+                    else:
+                        print("Invalid input. Please enter 'y' or 'n'.")
+            else:
+                print("Invalid input. Please enter 'y' or 'n'.")
+        else:
+            closed_input = input("Market is either not trading today or has not closed yet for the day. Would you like to practice trade on a past date? (y/n): ")
+            if closed_input.lower() == 'y':
+                while True:
+                    date_input = input("Enter date (YYYY-MM-DD): ")
+                    try:
+                        date = datetime.strptime(date_input, '%Y-%m-%d').strftime('%Y-%m-%d')
+                        return date
+                    except ValueError:
+                        print("Invalid date format. try again.")
+            elif closed_input.lower() == 'n':
+                return None
+            else:
+                print("Invalid input. Please enter 'y' or 'n'.")
+
+def get_trading_action(ticker, date):
+    while True:
+        sentiment_input = input("Would you like to trade based on sentiment analysis of the company for the day? (y/n): ")
+        if sentiment_input.lower() == 'y':
+            action = trade_from_sentiment_analysis(ticker, date)
+            if(action):
+                return action
+            else:
+                while True:
+                    new_action = input("No sentiment data available for the selected date. Trade without sentiment data? (y/n): ")
+                    if new_action.lower() == 'y':
+                        while True:
+                            action = input("What trading action would you like to take at open? (BUY/SHORT): ").upper()
+                            if action == "BUY" or action == "SHORT":
+                                return action
+                            else:
+                                print("Invalid input. Please enter 'BUY' or 'SHORT'.")
+                    elif new_action.lower() == 'n':
+                        print("Exiting.")
+                        return None
+                    else:
+                        print("Invalid input. Please enter 'y' or 'n'.")  
+        elif sentiment_input.lower() == 'n':
+            while True:
+                action = input("What trading action would you like to take at open? (BUY/SHORT): ").upper()
+                if action == "BUY" or action == "SHORT":
+                    return action
+                else:
+                    print("Invalid input. Please enter 'BUY' or 'SHORT'.")
+        else:
+            print("Invalid input. Please enter 'y' or 'n'.")
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Practice Stock Trading Simulator')
     parser.add_argument('--ticker', type=str, help='Stock ticker symbol')
@@ -437,41 +579,30 @@ def menu(trader):
         
         if choice == '1':
             if not has_market_closed_yet() or not is_market_open_today():
-                closed_input = input("Market is either not trading today or has not closed yet for the day. Would you like to practice trade on a past date? (y/n): ")
-                if closed_input.lower() == 'y':
-                    date_input = input("Enter date (YYYY-MM-DD): ")
-                    try:
-                        date = datetime.strptime(date_input, '%Y-%m-%d').strftime('%Y-%m-%d')
-                    except ValueError:
-                        print("Invalid date format. try again.")
-                        continue
-                else:
-                    print("Exiting. Your trading data has been saved.")
-                    break
-            stock_input = input("Enter stock name (eg. Tesla): ")
-            ticker = get_stock_from_user_input(stock_input)
+                date = get_practice_date(False)
+            else:
+                date = get_practice_date(True)
             if not date:
-                date = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-            
-            try:
-                # Get dollar amount to invest
-                investment_amount = float(load_current_balance() / 2)
-                if investment_amount <= 0:
-                    print("Investment amount must be positive.")
-                    continue
-
-                sentiment_input = input("Would you like to trade based on sentiment analysis of the company for the day? (y/n): ")
-                if sentiment_input.lower() == 'y':
-                    action = trade_from_sentiment_analysis(ticker, date)
+                print("Exiting.")
+                break
+            while True:
+                stock_input = input("Enter stock name (eg. Tesla) or ticker symbol (eg. TSLA): ")
+                ticker = get_stock_from_user_input(stock_input)
+                if ticker:
+                    break
                 else:
-                    action = input("Action at open (BUY/SHORT, default: BUY): ").upper() or "BUY"
-                    if action not in ["BUY", "SHORT"]:
-                        print("Invalid action. Using BUY.")
-                        action = "BUY"
-                # Execute trade
-                trader.trade(ticker, date, investment_amount, action)
-            except ValueError as e:
-                print(f"Invalid input: {e}")
+                    print("Invalid stock name. Please try again.")
+            investment_amount = float(load_current_balance() / 2)
+            if(investment_amount <= 0):
+                if(reset_balance()):
+                    investment_amount = float(load_current_balance() / 2)
+                else:
+                    break
+            action = get_trading_action(ticker, date)
+            if not action:
+                break
+            # Execute trade
+            trader.trade(ticker, date, investment_amount, action)
         
         elif choice == '2':
             limit = input("How many transactions to show? (default: 10): ")
